@@ -1,0 +1,4 @@
+REZKA_BUNDLE_IDENTIFIER = com.personal.rezkaport
+REZKA_DEVICE_FAMILY = 1
+DEVELOPMENT_TEAM =
+#include? "Local.xcconfig"

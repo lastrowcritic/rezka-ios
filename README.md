@@ -57,11 +57,15 @@ The `.ipa` is not signed, because the app is not on the App Store. Install it wi
 
 You need a Mac with Xcode 16 or newer. iOS 17 or newer is required on the iPhone.
 
-1. Open `RezkaPort.xcodeproj` in Xcode.
-2. Select the `RezkaPort` target, open **Signing & Capabilities** and choose your own team. If Xcode reports that the bundle identifier is taken, change it to something unique.
+1. Copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig`. Set your Apple development team ID in `DEVELOPMENT_TEAM` and a unique app identifier in `REZKA_BUNDLE_IDENTIFIER`. The test targets derive their identifiers from this value.
+2. Open `RezkaPort.xcodeproj` in Xcode.
 3. Connect your iPhone and press **Run**.
 
 The Xcode project is generated from `project.yml`. If you change the project settings, run `xcodegen generate` (from [XcodeGen](https://github.com/yonaskolb/XcodeGen)) to update it.
+
+`Config/Local.xcconfig` is ignored by Git and loaded optionally by `Config/Shared.xcconfig`. Editing local settings does not require regenerating the project. Without a local file, unsigned builds use the shared defaults. Set `REZKA_DEVICE_FAMILY = 1,2` in your local file to enable native iPad builds.
+
+For personal launch settings, duplicate the `RezkaPort` scheme in **Product → Scheme → Manage Schemes** and leave **Shared** unchecked. Xcode stores user schemes in the ignored `xcuserdata` directory.
 
 To build an unsigned `.ipa` from the command line:
 

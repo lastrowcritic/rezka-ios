@@ -72,6 +72,7 @@
 		094E55B72B371BA6D4F8F3B3 /* MediaCountry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaCountry.swift; sourceTree = "<group>"; };
 		11FB49359F3C1CBDE53D1F03 /* PlaybackHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackHistoryTests.swift; sourceTree = "<group>"; };
 		170436B3693ACC4A2CBFDB9D /* RezkaLayoutDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RezkaLayoutDiagnostics.swift; sourceTree = "<group>"; };
+		172C83A5017E660857A25FEA /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
 		1D6E6F9DAC2ACF8BC38FA695 /* DemoContentSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoContentSource.swift; sourceTree = "<group>"; };
 		2CBB38BE27F060623CFB5B50 /* RezkaModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RezkaModels.swift; sourceTree = "<group>"; };
 		2F5B682F09DAE79DE237014E /* PlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerView.swift; sourceTree = "<group>"; };
@@ -131,6 +132,7 @@
 		296ABB4B7282087785686C4B = {
 			isa = PBXGroup;
 			children = (
+				C0F2AAE35D5D53C4309BFA0C /* Config */,
 				8546FCE03C833B1ACA8B9435 /* StreamingApp */,
 				E1A6DC0F31E9135098C92CFF /* StreamingAppTests */,
 				960B1AE638E24CB2BB4D78CF /* StreamingAppUITests */,
@@ -266,6 +268,14 @@
 				E0C864DF373275A51727CA6D /* HomeView.swift */,
 			);
 			path = Home;
+			sourceTree = "<group>";
+		};
+		C0F2AAE35D5D53C4309BFA0C /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				172C83A5017E660857A25FEA /* Shared.xcconfig */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 		CBBE6B299AF6EF86F21C8A4C /* Rezka */ = {
@@ -528,7 +538,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.personal.rezkaport.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(REZKA_BUNDLE_IDENTIFIER).uitests";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = RezkaPort;
@@ -547,12 +557,13 @@
 					"@executable_path/Frameworks",
 				);
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "$(REZKA_DEVICE_FAMILY)";
 			};
 			name = Release;
 		};
 		2920B570DB662DA071BCFAA2 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 172C83A5017E660857A25FEA /* Shared.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -589,7 +600,6 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -617,7 +627,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.personal.rezkaport;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(REZKA_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -635,7 +645,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.personal.rezkaport.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(REZKA_BUNDLE_IDENTIFIER).uitests";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = RezkaPort;
@@ -654,7 +664,7 @@
 					"@executable_path/Frameworks",
 				);
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "$(REZKA_DEVICE_FAMILY)";
 			};
 			name = Debug;
 		};
@@ -667,7 +677,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.personal.rezkaport.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(REZKA_BUNDLE_IDENTIFIER).tests";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RezkaPort.app/RezkaPort";
@@ -683,7 +693,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.personal.rezkaport.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(REZKA_BUNDLE_IDENTIFIER).tests";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RezkaPort.app/RezkaPort";
@@ -692,6 +702,7 @@
 		};
 		BBC7891F1863E709282D724D /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 172C83A5017E660857A25FEA /* Shared.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -728,7 +739,6 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -749,7 +759,7 @@
 				MARKETING_VERSION = 1.1.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.personal.rezkaport;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(REZKA_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
