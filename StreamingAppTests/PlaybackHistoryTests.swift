@@ -1,9 +1,40 @@
 #if os(iOS)
+import AVFoundation
 import XCTest
 @testable import RezkaPort
 
 @MainActor
 final class PlaybackHistoryTests: XCTestCase {
+    func testNativePlayerReceivesReadyStatusAndSeeksWhileConsumerIsSuspended() async throws {
+        let url = try XCTUnwrap(Bundle.main.url(forResource: "NativePlayerFixture", withExtension: "mp4"))
+        let item = AVPlayerItem(url: url)
+        let player = AVPlayer(playerItem: item)
+        let resumed = expectation(description: "Native player restores saved position")
+        let task = Task { @MainActor in
+            for await status in PlayerView.itemStatusUpdates(for: item).values {
+                guard !Task.isCancelled else { return }
+                if status == .unknown {
+                    // Let KVO deliver readiness while AsyncPublisher has no demand.
+                    try? await Task.sleep(for: .milliseconds(500))
+                } else if status == .readyToPlay {
+                    let success = await player.seek(to: CMTime(seconds: 12.5, preferredTimescale: 600),
+                                                    toleranceBefore: .zero, toleranceAfter: .zero)
+                    XCTAssertTrue(success)
+                    XCTAssertEqual(player.currentTime().seconds, 12.5, accuracy: 0.1)
+                    resumed.fulfill()
+                    return
+                } else if status == .failed {
+                    XCTFail(item.error?.localizedDescription ?? "Fixture playback failed")
+                    resumed.fulfill()
+                    return
+                }
+            }
+        }
+        defer { task.cancel(); player.pause() }
+        player.play()
+        await fulfillment(of: [resumed], timeout: 10)
+    }
+
     func testCountryExclusionsPersistAndKeepSavedTitlesAvailable() throws {
         let suite = "RezkaCountryTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

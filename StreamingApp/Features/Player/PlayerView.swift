@@ -1,4 +1,5 @@
 import AVKit
+import Combine
 import SwiftUI
 
 struct PlayerView: View {
@@ -143,18 +144,29 @@ struct PlayerView: View {
         readyTask?.cancel()
         guard let currentItem = player.currentItem else { return }
         readyTask = Task { @MainActor in
-            for await status in currentItem.publisher(for: \.status).values {
+            for await status in Self.itemStatusUpdates(for: currentItem).values {
                 if Task.isCancelled { return }
                 if status == .failed { useAlternative(); return }
                 if status == .readyToPlay, let position = pendingSeek {
-                    pendingSeek = nil
-                    await player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: CMTime(seconds: 3, preferredTimescale: 600), toleranceAfter: .zero)
+                    let restored = await player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: CMTime(seconds: 3, preferredTimescale: 600), toleranceAfter: .zero)
                     guard !Task.isCancelled else { return }
+                    guard restored else {
+                        failPlayback("Your saved position could not be restored. Please try again.")
+                        return
+                    }
+                    pendingSeek = nil
                     isRestoringPosition = false
                     player.playImmediately(atRate: player.defaultRate)
                 }
             }
         }
+    }
+
+    static func itemStatusUpdates(for item: AVPlayerItem) -> some Publisher<AVPlayerItem.Status, Never> {
+        // AsyncPublisher requests one value at a time. KVO can emit readyToPlay
+        // between requests (or while a seek is awaited), so retain the latest status.
+        item.publisher(for: \.status)
+            .buffer(size: 1, prefetch: .byRequest, whenFull: .dropOldest)
     }
 
     private func saveProgress() {
@@ -182,7 +194,7 @@ struct PlayerView: View {
 
     private func replaceURL(_ url: URL) {
         let position = player.currentTime().seconds
-        if position.isFinite, position > 0 { pendingSeek = position; isRestoringPosition = true }
+        if pendingSeek == nil, position.isFinite, position > 0 { pendingSeek = position; isRestoringPosition = true }
         player.replaceCurrentItem(with: Self.playerItem(url: url, headers: source.headers, title: item.title, request: request))
         observeCurrentItem()
         player.playImmediately(atRate: player.defaultRate)
