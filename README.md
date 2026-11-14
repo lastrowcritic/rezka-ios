@@ -1,6 +1,6 @@
-# Rezka: HDRezka app for iPhone (iOS)
+# Rezka: HDRezka app for iPhone and iPad
 
-**An unofficial HDRezka client that lets you watch the films and series from the HDRezka website in a Netflix-style experience, like a premium streaming platform.** It tracks the films and episodes you have watched, so you can continue exactly where you left off. It is a native iPhone app with AirPlay to your TV, Picture in Picture and offline downloads.
+**An unofficial HDRezka client that lets you watch the films and series from the HDRezka website in a Netflix-style experience, like a premium streaming platform.** It tracks the films and episodes you have watched, so you can continue exactly where you left off. It is a native iPhone and iPad app with AirPlay to your TV, Picture in Picture and offline downloads.
 
 <p align="center">
   <img src="screenshots/home.jpg" width="32%" alt="Rezka home screen on iPhone">
@@ -8,7 +8,7 @@
   <img src="screenshots/search.jpg" width="32%" alt="Search on iPhone">
 </p>
 
-Looking for Android, tablets or Google TV? See [rezka-android](https://github.com/lastrowcritic/rezka-android). Want your history on every device? Host your own [rezka-sync-server](https://github.com/lastrowcritic/rezka-sync-server).
+Looking for Android phones, Android tablets or Google TV? See [rezka-android](https://github.com/lastrowcritic/rezka-android). Want your history on every device? Host your own [rezka-sync-server](https://github.com/lastrowcritic/rezka-sync-server).
 
 ## Disclaimer
 
@@ -55,15 +55,15 @@ The `.ipa` is not signed, because the app is not on the App Store. Install it wi
 
 ## Build it yourself
 
-You need a Mac with Xcode 16 or newer. iOS 17 or newer is required on the iPhone.
+You need a Mac with Xcode 16 or newer and an iPhone or iPad running iOS/iPadOS 17 or newer. The shared project supports native builds for both device families.
 
 1. Copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig`. Set your Apple development team ID in `DEVELOPMENT_TEAM` and a unique app identifier in `REZKA_BUNDLE_IDENTIFIER`. The test targets derive their identifiers from this value.
 2. Open `RezkaPort.xcodeproj` in Xcode.
-3. Connect your iPhone and press **Run**.
+3. Connect your iPhone or iPad and press **Run**.
 
 The Xcode project is generated from `project.yml`. If you change the project settings, run `xcodegen generate` (from [XcodeGen](https://github.com/yonaskolb/XcodeGen)) to update it.
 
-`Config/Local.xcconfig` is ignored by Git and loaded optionally by `Config/Shared.xcconfig`. Editing local settings does not require regenerating the project. Without a local file, unsigned builds use the shared defaults. Set `REZKA_DEVICE_FAMILY = 1,2` in your local file to enable native iPad builds.
+`Config/Local.xcconfig` is ignored by Git and loaded optionally by `Config/Shared.xcconfig`. Editing local settings does not require regenerating the project. Without a local file, unsigned builds use the shared defaults.
 
 For personal launch settings, duplicate the `RezkaPort` scheme in **Product → Scheme → Manage Schemes** and leave **Shared** unchecked. Xcode stores user schemes in the ignored `xcuserdata` directory.
 
