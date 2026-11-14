@@ -4,6 +4,9 @@ import Foundation
 struct RezkaUITestTransport: RezkaTransport {
     func send(_ request: URLRequest) async throws -> RezkaHTTPResponse {
         guard let url = request.url else { throw RezkaError.invalidURL }
+        if ProcessInfo.processInfo.arguments.contains("--rezka-ui-resume"), url.path.contains("42-screen-test") {
+            try await Task.sleep(for: .seconds(3))
+        }
         if ProcessInfo.processInfo.arguments.contains("--rezka-ui-search"),
            URLComponents(url: url, resolvingAgainstBaseURL: false)?.path == RezkaEndpoints.search {
             let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
@@ -27,6 +30,9 @@ struct RezkaUITestTransport: RezkaTransport {
             var response: [String: Any] = ["success": true, "url": "[720p]https://video.test/stream?id=42",
                 "subtitle": "", "subtitle_lns": [:], "subtitle_def": "0"]
             if form.contains("get_episodes") {
+                if ProcessInfo.processInfo.arguments.contains("--rezka-ui-resume") {
+                    try await Task.sleep(for: .seconds(3))
+                }
                 response["seasons"] = "<li class='b-simple_season__item' data-tab_id='1'>Season 1</li><li class='b-simple_season__item' data-tab_id='2'>Season 2</li>"
                 response["episodes"] = "<div id='simple-episodes-list-1'><li class='b-simple_episode__item' data-episode_id='1'>First episode</li></div><div id='simple-episodes-list-2'><li class='b-simple_episode__item' data-episode_id='1'>Second episode</li></div>"
             }

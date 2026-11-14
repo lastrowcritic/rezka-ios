@@ -3,6 +3,33 @@ import AVKit
 
 @MainActor
 final class RezkaUITests: XCTestCase {
+    func testContinueWatchingShowsResumeBeforeMovieAndEpisodeDetailsLoad() throws {
+        for series in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--rezka-ui-fixtures", "--rezka-ui-resume"] + (series ? ["--rezka-ui-series"] : [])
+            app.launch()
+            let saved = app.buttons["continue-title-42"]
+            XCTAssertTrue(saved.waitForExistence(timeout: 15))
+            for _ in 0..<4 where !saved.isHittable { app.swipeUp() }
+            saved.tap()
+            let play = app.buttons["play-title"]
+            XCTAssertTrue(play.waitForExistence(timeout: 5))
+            let label = series ? "Resume S2 E1" : "Resume from 0:12"
+            XCTAssertEqual(play.label, label)
+            XCTAssertFalse(play.isEnabled, "Check the initial label before network-backed selections load")
+            expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: play)
+            waitForExpectations(timeout: 20)
+            XCTAssertEqual(play.label, label)
+            if !play.isHittable { app.swipeUp() }
+            play.tap()
+            XCTAssertTrue(app.otherElements["native-player"].waitForExistence(timeout: 10))
+            expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.otherElements["playback-loading"])
+            waitForExpectations(timeout: 10)
+            capture(app, name: series ? "Resume saved episode" : "Resume saved movie")
+            app.terminate()
+        }
+    }
+
     func testLiveSearchReturnsTitlesOnDevice() throws {
         #if targetEnvironment(simulator)
         throw XCTSkip("Live search is checked on a connected device")

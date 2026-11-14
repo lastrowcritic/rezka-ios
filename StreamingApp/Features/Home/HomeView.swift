@@ -280,6 +280,7 @@ struct HomeView: View {
                             .padding(10)
                             .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         }
+                        .accessibilityIdentifier("continue-title-\(record.item.id)")
                         .posterPressFeedback()
                     }
                 }

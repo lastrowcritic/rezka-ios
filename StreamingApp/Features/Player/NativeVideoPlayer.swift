@@ -28,6 +28,7 @@ struct NativeFullscreenPlayer: UIViewControllerRepresentable {
 /// AVPlayerViewController is intentionally used directly, as required by AVKit.
 final class NativePlayerHost: UIViewController, @preconcurrency AVPlayerViewControllerDelegate, UIAdaptivePresentationControllerDelegate {
     private let playback = AVPlayerViewController()
+    private let preparationCover = UIView()
     private var didPresent = false
     private var isInPictureInPicture = false
     private var isClosing = false
@@ -36,6 +37,7 @@ final class NativePlayerHost: UIViewController, @preconcurrency AVPlayerViewCont
     private var onStop: (@MainActor () -> Void)?
     private var onClose: (@MainActor () -> Void)?
     private var itemObservation: AnyCancellable?
+    private var rateObservation: AnyCancellable?
 
     override var shouldAutorotate: Bool { true }
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .allButUpsideDown }
@@ -46,12 +48,44 @@ final class NativePlayerHost: UIViewController, @preconcurrency AVPlayerViewCont
             playback.player = player
             itemObservation = player.publisher(for: \.currentItem).sink { [weak self] item in
                 self?.updatePlaybackDescription(item)
+                self?.updatePreparationCover(item != nil)
+            }
+            // The SwiftUI host is covered by AVKit's full-screen presentation.
+            // Follow the player directly so the cover clears while that host is hidden.
+            rateObservation = player.publisher(for: \.rate).receive(on: RunLoop.main).sink { [weak self] rate in
+                if rate > 0 { self?.updatePreparationCover(false) }
             }
         }
         self.onClose = onClose
         updatePlaybackDescription(player.currentItem, fallback: playbackDescription)
         self.onPresent = onPresent
         self.onStop = onStop
+    }
+
+    private func updatePreparationCover(_ isPreparing: Bool) {
+        if preparationCover.superview == nil, let overlay = playback.contentOverlayView {
+            preparationCover.backgroundColor = .black
+            preparationCover.isUserInteractionEnabled = false
+            preparationCover.isAccessibilityElement = true
+            preparationCover.accessibilityLabel = "Loading video"
+            preparationCover.translatesAutoresizingMaskIntoConstraints = false
+            preparationCover.accessibilityIdentifier = "playback-loading"
+            let spinner = UIActivityIndicatorView(style: .large)
+            spinner.translatesAutoresizingMaskIntoConstraints = false
+            spinner.color = .white
+            spinner.startAnimating()
+            preparationCover.addSubview(spinner)
+            overlay.addSubview(preparationCover)
+            NSLayoutConstraint.activate([
+                preparationCover.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
+                preparationCover.trailingAnchor.constraint(equalTo: overlay.trailingAnchor),
+                preparationCover.topAnchor.constraint(equalTo: overlay.topAnchor),
+                preparationCover.bottomAnchor.constraint(equalTo: overlay.bottomAnchor),
+                spinner.centerXAnchor.constraint(equalTo: preparationCover.centerXAnchor),
+                spinner.centerYAnchor.constraint(equalTo: preparationCover.centerYAnchor)
+            ])
+        }
+        preparationCover.isHidden = !isPreparing
     }
 
     private func updatePlaybackDescription(_ item: AVPlayerItem?, fallback: String? = nil) {
@@ -110,6 +144,7 @@ final class NativePlayerHost: UIViewController, @preconcurrency AVPlayerViewCont
         onClose = nil
         onPresent = nil
         itemObservation = nil
+        rateObservation = nil
         playback.delegate = nil
         playback.player = nil
         playback.dismiss(animated: false)

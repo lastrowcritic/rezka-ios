@@ -24,7 +24,7 @@ struct PlayerView: View {
     let seasons: [RezkaSeason]
     let onFailure: @MainActor (String) -> Void
 
-    init(item: MediaItem, source: PlaybackSource, preferredQuality: String, request: PlaybackRequest? = nil, seasons: [RezkaSeason] = [], onFailure: @escaping @MainActor (String) -> Void = { _ in }) {
+    init(item: MediaItem, source: PlaybackSource, preferredQuality: String, request: PlaybackRequest? = nil, seasons: [RezkaSeason] = [], makePlayer: (AVPlayerItem) -> AVPlayer = { AVPlayer(playerItem: $0) }, onFailure: @escaping @MainActor (String) -> Void = { _ in }) {
         self.item = item
         self.seasons = seasons
         self.onFailure = onFailure
@@ -32,7 +32,7 @@ struct PlayerView: View {
         _request = State(initialValue: request)
         let stream = source.streams.first(where: { $0.quality == preferredQuality }) ?? source.streams[0]
         _selectedQuality = State(initialValue: stream.quality)
-        _player = State(initialValue: AVPlayer(playerItem: Self.playerItem(url: stream.url, headers: source.headers, title: item.title, request: request)))
+        _player = State(initialValue: makePlayer(Self.playerItem(url: stream.url, headers: source.headers, title: item.title, request: request)))
     }
 
     var body: some View {
@@ -92,16 +92,10 @@ struct PlayerView: View {
             alternativeIndex = 0
             pendingSeek = 0
             isRestoringPosition = true
+            player.pause()
             player.replaceCurrentItem(with: Self.playerItem(url: stream.url, headers: result.headers, title: item.title, request: selection))
             model.recordProgress(for: item, position: 0, duration: 0, request: selection)
-            #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--rezka-ui-fixtures") {
-                player.play()
-                return
-            }
-            #endif
             observeCurrentItem()
-            player.playImmediately(atRate: player.defaultRate)
         } catch is CancellationError { }
         catch { failPlayback(error.localizedDescription) }
     }
@@ -110,11 +104,11 @@ struct PlayerView: View {
         guard !hasStarted else { return }
         hasStarted = true
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--rezka-ui-fixtures") {
+        if ProcessInfo.processInfo.arguments.contains("--rezka-ui-fixtures"),
+           ProcessInfo.processInfo.arguments.contains("--rezka-ui-finished-episode") {
             try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
             try? AVAudioSession.sharedInstance().setActive(true)
-            if ProcessInfo.processInfo.arguments.contains("--rezka-ui-finished-episode") { finishEpisode() }
-            else { player.play() }
+            finishEpisode()
             return
         }
         #endif
@@ -137,7 +131,9 @@ struct PlayerView: View {
                 saveProgress()
             }
         }
-        player.play()
+        // AVPlayerItem loads while paused. Do not play the opening frames/audio
+        // while readiness and the saved-position seek are still pending.
+        if pendingSeek == nil { player.play() }
     }
 
     private func observeCurrentItem() {
@@ -148,7 +144,7 @@ struct PlayerView: View {
                 if Task.isCancelled { return }
                 if status == .failed { useAlternative(); return }
                 if status == .readyToPlay, let position = pendingSeek {
-                    let restored = await player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: CMTime(seconds: 3, preferredTimescale: 600), toleranceAfter: .zero)
+                    let restored = await player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
                     guard !Task.isCancelled else { return }
                     guard restored else {
                         failPlayback("Your saved position could not be restored. Please try again.")
@@ -195,9 +191,10 @@ struct PlayerView: View {
     private func replaceURL(_ url: URL) {
         let position = player.currentTime().seconds
         if pendingSeek == nil, position.isFinite, position > 0 { pendingSeek = position; isRestoringPosition = true }
+        player.pause()
         player.replaceCurrentItem(with: Self.playerItem(url: url, headers: source.headers, title: item.title, request: request))
         observeCurrentItem()
-        player.playImmediately(atRate: player.defaultRate)
+        if pendingSeek == nil { player.play() }
     }
 
     private func useAlternative() {

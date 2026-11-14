@@ -83,6 +83,14 @@ final class AppModel {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--rezka-ui-fixtures") {
             autoPlayNext = ProcessInfo.processInfo.arguments.contains("--rezka-ui-autoplay")
+            if ProcessInfo.processInfo.arguments.contains("--rezka-ui-resume") {
+                let series = ProcessInfo.processInfo.arguments.contains("--rezka-ui-series")
+                let item = MediaItem(id: "42", title: "Screen test title", kind: series ? .series : .movie,
+                    genre: "Drama", synopsis: "", symbol: "film", paletteIndex: 0,
+                    rezka: RezkaMedia(movieID: "42", pageURL: URL(string: "https://rezka.test/\(series ? "series" : "films")/42-screen-test.html")!, isSeries: series))
+                recordProgress(for: item, position: 12.5, duration: 30,
+                    request: PlaybackRequest(mediaID: "42", translatorID: "7", season: series ? "2" : nil, episode: series ? "1" : nil))
+            }
         }
         #endif
     }

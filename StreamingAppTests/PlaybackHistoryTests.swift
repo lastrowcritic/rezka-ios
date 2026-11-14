@@ -1,10 +1,70 @@
 #if os(iOS)
 import AVFoundation
+import Combine
+import SwiftUI
 import XCTest
 @testable import RezkaPort
 
 @MainActor
 final class PlaybackHistoryTests: XCTestCase {
+    func testMoviesAndEpisodesStayPausedUntilTheirSavedPositionIsRestored() async throws {
+        for series in [false, true] {
+            try await assertFirstPlaybackPosition(12.5, series: series)
+        }
+    }
+
+    func testStartOverStillPlaysMoviesAndEpisodesFromZero() async throws {
+        for series in [false, true] {
+            try await assertFirstPlaybackPosition(0, series: series)
+        }
+    }
+
+    private func assertFirstPlaybackPosition(_ position: TimeInterval, series: Bool) async throws {
+        let suite = "RezkaStartupTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(defaults: defaults)
+        let url = try XCTUnwrap(Bundle.main.url(forResource: "NativePlayerFixture", withExtension: "mp4"))
+        let item = MediaItem(id: "startup", title: "Startup test", kind: series ? .series : .movie,
+                             genre: "Drama", synopsis: "", symbol: "film", paletteIndex: 0, streamURL: url)
+        let request = series ? PlaybackRequest(mediaID: item.id, season: "2", episode: "5") : nil
+        model.recordProgress(for: item, position: position, duration: 30, request: request)
+        let player = AVPlayer()
+        let started = expectation(description: "Playback starts at the intended position")
+        var didStart = false
+        let observation = player.publisher(for: \.rate).sink { rate in
+            guard rate > 0, !didStart else { return }
+            didStart = true
+            XCTAssertEqual(player.currentTime().seconds, position, accuracy: 0.2,
+                           "The first play command must follow the resume seek")
+            started.fulfill()
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previousWindow = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        let view = PlayerView(item: item, source: PlaybackSource(streams: [VideoStream(quality: "Original", url: url)], subtitles: []),
+                              preferredQuality: "Original", request: request, makePlayer: { item in
+            player.replaceCurrentItem(with: item)
+            return player
+        }, onFailure: { message in
+            XCTFail(message)
+            started.fulfill()
+        })
+        let controller = UIHostingController(rootView: view.environment(model))
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer {
+            observation.cancel()
+            player.pause()
+            window.isHidden = true
+            window.rootViewController = nil
+            previousWindow?.makeKey()
+        }
+        await fulfillment(of: [started], timeout: 10)
+        player.pause()
+        await controller.dismiss(animated: false)
+    }
+
     func testNativePlayerReceivesReadyStatusAndSeeksWhileConsumerIsSuspended() async throws {
         let url = try XCTUnwrap(Bundle.main.url(forResource: "NativePlayerFixture", withExtension: "mp4"))
         let item = AVPlayerItem(url: url)
