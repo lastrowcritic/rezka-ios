@@ -3,6 +3,63 @@ import AVKit
 
 @MainActor
 final class RezkaUITests: XCTestCase {
+    func testLiveSearchReturnsTitlesOnDevice() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Live search is checked on a connected device")
+        #else
+        let app = XCUIApplication()
+        app.launch()
+        XCTAssertTrue(app.buttons["Search titles"].waitForExistence(timeout: 45))
+        app.buttons["Search titles"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let field = app.textFields["Search Rezka titles"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        for query in ["не родись красивой", "Dune"] {
+            if app.buttons["Clear search"].exists { app.buttons["Clear search"].tap() }
+            field.tap()
+            field.typeText(query)
+            XCTAssertTrue(app.staticTexts["Results"].waitForExistence(timeout: 40), "Expected results for \(query). \(app.debugDescription)")
+            capture(app, name: "Live search \(query)")
+        }
+        #endif
+    }
+
+    func testHomeSearchButtonOpensSearchInsteadOfFeaturedTitle() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--rezka-ui-fixtures"]
+        app.launch()
+        XCTAssertTrue(app.buttons["featured-title"].waitForExistence(timeout: 20))
+        let search = app.buttons["Search titles"]
+        XCTAssertTrue(search.isHittable)
+        search.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.textFields["Search Rezka titles"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["play-title"].exists)
+    }
+
+    func testSearchAcceptsQueryAndUpdatesResults() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--rezka-ui-fixtures", "--rezka-ui-search"]
+        app.launch()
+        XCTAssertTrue(app.buttons["featured-title"].waitForExistence(timeout: 20))
+        app.buttons["Search"].firstMatch.tap()
+        let field = app.textFields["Search Rezka titles"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        field.typeText("Screen test")
+        XCTAssertTrue(app.staticTexts["Results"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["1 titles"].exists)
+        XCTAssertFalse(app.buttons["play-title"].exists)
+        app.buttons["Clear search"].tap()
+        XCTAssertTrue(app.staticTexts["Popular right now"].waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("No matching title")
+        XCTAssertTrue(app.staticTexts["No results yet"].waitForExistence(timeout: 10))
+        app.buttons["Clear search"].tap()
+        field.tap()
+        field.typeText("Екран")
+        XCTAssertTrue(app.staticTexts["Results"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["catalogue-title-42"].exists)
+    }
+
     func testCategoryTilesScheduleAndMatchingPlaybackActions() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--rezka-ui-fixtures", "--rezka-ui-polish"]

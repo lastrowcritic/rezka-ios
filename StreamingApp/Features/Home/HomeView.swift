@@ -241,6 +241,7 @@ struct HomeView: View {
                 .padding(22)
             }
             .clipShape(Rectangle())
+            .contentShape(Rectangle())
         }
         .posterPressFeedback()
         .accessibilityIdentifier("featured-title")

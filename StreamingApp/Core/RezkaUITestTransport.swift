@@ -4,6 +4,18 @@ import Foundation
 struct RezkaUITestTransport: RezkaTransport {
     func send(_ request: URLRequest) async throws -> RezkaHTTPResponse {
         guard let url = request.url else { throw RezkaError.invalidURL }
+        if ProcessInfo.processInfo.arguments.contains("--rezka-ui-search"),
+           URLComponents(url: url, resolvingAgainstBaseURL: false)?.path == RezkaEndpoints.search {
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+                .first(where: { $0.name == "q" })?.value ?? ""
+            try await Task.sleep(for: .milliseconds(150))
+            let matches = ["screen test", "екран"].contains(query.lowercased())
+            let html = matches ? """
+            <div class="b-content__inline_item" data-id="42" data-url="/films/42-screen-test.html">
+            <div class="b-content__inline_item-link"><a href="/films/42-screen-test.html">Screen test title</a><div>2026, Italy, Drama</div></div></div>
+            """ : "<div class='b-content__search_wrapper'>No results</div>"
+            return RezkaHTTPResponse(data: Data(html.utf8), url: url, statusCode: 200)
+        }
         if ProcessInfo.processInfo.arguments.contains("--rezka-ui-polish"), !url.path.contains("get_cdn_series") {
             return RezkaHTTPResponse(data: Data(polishHTML(url: url).utf8), url: url, statusCode: 200)
         }

@@ -353,6 +353,36 @@ final class RezkaScrapingTests: XCTestCase {
         XCTAssertEqual(fields["page"], "2")
     }
 
+    func testEndpointPathsHaveOneLeadingSlash() throws {
+        for baseURL in [base, URL(string: "https://hdrezka.test/nested/?old=1#anchor")!] {
+            for path in [RezkaEndpoints.search, RezkaEndpoints.player, RezkaEndpoints.comments, RezkaEndpoints.collections] {
+                let url = try RezkaEndpoints.url(path: path, baseURL: baseURL)
+                XCTAssertEqual(url.path, String(path.dropLast()))
+                XCTAssertTrue(url.absoluteString.hasSuffix(path))
+                XCTAssertNil(url.query)
+                XCTAssertNil(url.fragment)
+            }
+            let ajax = try RezkaEndpoints.ajaxURL(path: RezkaEndpoints.player, baseURL: baseURL, now: Date(timeIntervalSince1970: 1))
+            XCTAssertEqual(URLComponents(url: ajax, resolvingAgainstBaseURL: false)?.path, RezkaEndpoints.player)
+            XCTAssertEqual(ajax.query, "t=1000")
+        }
+    }
+
+    func testUnavailableSearchPageIsAnError() throws {
+        let message = "Поиск временно недоступен. Приносим свои извинения за временные неудобства!"
+        let html = "<div class='b-content__search_wrapper'><div class='b-info__message'>\(message)</div></div>"
+        XCTAssertThrowsError(try RezkaPageParser().search(html: html, baseURL: base)) { error in
+            guard case RezkaError.server(let actual) = error else { return XCTFail("Expected server message, got \(error)") }
+            XCTAssertEqual(actual, message)
+        }
+    }
+
+    func testEmptySearchPageRemainsAValidResult() throws {
+        let result = try RezkaPageParser().search(html: "<div class='b-content__search_wrapper'>По вашему запросу ничего не найдено</div>", baseURL: base)
+        XCTAssertTrue(result.items.isEmpty)
+        XCTAssertFalse(result.hasNextPage)
+    }
+
     func testCataloguePaginationUsesPathAndFilter() async throws {
         let transport = StubTransport(responses: [Fixtures.response(Fixtures.catalogue, base)])
         let client = RezkaHttpClient(transport: transport)

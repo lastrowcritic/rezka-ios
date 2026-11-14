@@ -8,8 +8,19 @@ enum RezkaEndpoints {
     static let comments = "/ajax/get_comments/"
     static let collections = "/collections/"
 
+    static func url(path: String, baseURL: URL) throws -> URL {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: true) else {
+            throw RezkaError.invalidURL
+        }
+        components.path = "/" + String(path.drop(while: { $0 == "/" }))
+        components.query = nil
+        components.fragment = nil
+        guard let url = components.url else { throw RezkaError.invalidURL }
+        return url
+    }
+
     static func ajaxURL(path: String, baseURL: URL, now: Date = .now) throws -> URL {
-        guard var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: true) else {
+        guard var components = URLComponents(url: try url(path: path, baseURL: baseURL), resolvingAgainstBaseURL: true) else {
             throw RezkaError.invalidURL
         }
         components.queryItems = [URLQueryItem(name: "t", value: String(Int64(now.timeIntervalSince1970 * 1000)))]

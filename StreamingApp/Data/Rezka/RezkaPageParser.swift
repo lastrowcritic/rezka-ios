@@ -2,6 +2,20 @@ import Foundation
 import SwiftSoup
 
 struct RezkaPageParser: Sendable {
+    func search(html: String, baseURL: URL, page: Int = 1) throws -> RezkaCataloguePage {
+        let result = try catalogue(html: html, baseURL: baseURL, page: page)
+        if result.items.isEmpty {
+            let message = try document(html, baseURL).select(".b-info__message").text()
+            if message.localizedCaseInsensitiveContains("Поиск временно недоступен") {
+                throw RezkaError.server(message)
+            }
+            guard html.contains("b-content") else {
+                throw RezkaError.invalidPage("The search page could not be read.")
+            }
+        }
+        return result
+    }
+
     func catalogue(html: String, baseURL: URL, page: Int = 1) throws -> RezkaCataloguePage {
         let document = try document(html, baseURL)
         let cards = try document.select(RezkaSelectors.cards).array()
