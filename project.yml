@@ -33,6 +33,7 @@ targets:
       properties:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        RezkaCloudContainer: $(REZKA_ICLOUD_CONTAINER)
         UIBackgroundModes:
           - audio
     sources:
@@ -42,8 +43,15 @@ targets:
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_ENTITLEMENTS: $(REZKA_ICLOUD_ENTITLEMENTS)
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) $(REZKA_CLOUDKIT_CONDITION)
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.entertainment
+      configs:
+        Debug:
+          REZKA_ICLOUD_ENVIRONMENT: Development
+        Release:
+          REZKA_ICLOUD_ENVIRONMENT: Production
   RezkaPortTests:
     type: bundle.unit-test
     platform: iOS

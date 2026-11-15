@@ -18,6 +18,8 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>RezkaCloudContainer</key>
+	<string>$(REZKA_ICLOUD_CONTAINER)</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

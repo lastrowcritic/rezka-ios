@@ -3,6 +3,51 @@ import AVKit
 
 @MainActor
 final class RezkaUITests: XCTestCase {
+    func testRemoteContinueWatchingAppearsAndReordersMostRecentFirst() async throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--rezka-ui-fixtures", "--rezka-ui-sync"]
+        app.launch()
+        let movie = app.buttons["continue-title-sync-movie"]
+        let series = app.buttons["continue-title-sync-series"]
+        XCTAssertTrue(movie.waitForExistence(timeout: 15))
+        for _ in 0..<3 where !movie.isHittable { app.swipeUp() }
+        XCTAssertTrue(series.waitForExistence(timeout: 30))
+        // Wait for the insertion animation to finish before checking geometry.
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertLessThan(series.frame.minX, movie.frame.minX)
+        capture(app, name: "Remote series inserted first")
+        let deadline = Date.now.addingTimeInterval(30)
+        while movie.frame.minX >= series.frame.minX, Date.now < deadline {
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        XCTAssertLessThan(movie.frame.minX, series.frame.minX)
+        capture(app, name: "Remote movie moved to first")
+    }
+
+    func testSettingsOffersOffAppleCloudAndCustomServer() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--rezka-ui-fixtures"]
+        app.launch()
+        // iPad places tabs in a horizontally scrolling bar. Reveal the last
+        // tab before tapping it; its clipped accessibility button can still exist.
+        let nextTabPage = app.buttons["Next Page"]
+        if nextTabPage.exists { nextTabPage.tap() }
+        app.buttons["Settings"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5), app.debugDescription)
+        let picker = app.buttons["sync-provider"]
+        for _ in 0..<6 where !picker.isHittable { app.swipeUp() }
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        picker.tap()
+        XCTAssertTrue(app.buttons["Apple Cloud (iCloud)"].waitForExistence(timeout: 5))
+        app.buttons["Custom server URL"].tap()
+        let serverAddress = app.textFields["Sync server address"]
+        for _ in 0..<3 where !serverAddress.isHittable { app.swipeUp() }
+        XCTAssertTrue(serverAddress.waitForExistence(timeout: 5))
+        picker.tap()
+        app.buttons["Off"].tap()
+        XCTAssertFalse(app.textFields["Sync server address"].exists)
+    }
+
     func testContinueWatchingShowsResumeBeforeMovieAndEpisodeDetailsLoad() throws {
         for series in [false, true] {
             let app = XCUIApplication()

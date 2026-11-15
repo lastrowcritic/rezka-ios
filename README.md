@@ -8,7 +8,7 @@
   <img src="screenshots/search.jpg" width="32%" alt="Search on iPhone">
 </p>
 
-Looking for Android phones, Android tablets or Google TV? See [rezka-android](https://github.com/lastrowcritic/rezka-android). Want your history on every device? Host your own [rezka-sync-server](https://github.com/lastrowcritic/rezka-sync-server).
+Looking for Android phones, Android tablets or Google TV? See [rezka-android](https://github.com/lastrowcritic/rezka-android). Sync iPhone and iPad through your private iCloud account, or host [rezka-sync-server](https://github.com/lastrowcritic/rezka-sync-server) for custom-server and Android sync.
 
 ## Disclaimer
 
@@ -26,15 +26,44 @@ This project is only a client. It does not host, upload, store or distribute any
 - **Download** films and episodes to watch offline.
 - **Hide countries** you are not interested in, across the whole app.
 - **Watchlist** and viewing history, saved on your iPhone.
-- **Sync** your history across devices with your own server (optional).
+- **Sync** watch history, episode positions and Continue Watching through Apple Cloud or your own server (optional).
 
-All of your data stays on your iPhone. The app has no analytics and no server of its own.
+Your library is saved locally. If you enable sync, viewing history is also stored in your private iCloud database or on the server you select. The app has no analytics and no public sync server.
 
 ## Sync across devices (optional)
 
-Your history and the position in each episode can follow you between your phone, tablet, TV and iPhone. Sync uses a small server that you host yourself: [rezka-sync-server](https://github.com/lastrowcritic/rezka-sync-server). It is a few PHP files that run on almost any web hosting plan, and its README explains the setup step by step.
+Open **Settings → Sync across devices → Sync with** and select:
 
-Then open **Settings → Sync across devices** in the app, enter your server address and sign in. Sync is off until you do this.
+- **Off** (default): history stays on this device.
+- **Apple Cloud (iCloud)**: use the same iCloud account on your iPhone and iPad. Requires an iCloud-enabled build; no separate Rezka account or hosting is needed.
+- **Custom server URL**: enter an HTTPS [rezka-sync-server](https://github.com/lastrowcritic/rezka-sync-server) address, apply it, then create an account or sign in. Use the same server/account on every device. This also works with Android and builds signed using a free Personal Team.
+
+Enabling a provider immediately merges local and remote history. The watched library includes movie completion, each episode’s position, translation, season and episode, and title details needed to show Continue Watching even before the catalogue loads. The most recently updated version of each movie/episode wins, including intentional rewinds. Continue Watching shows the latest episode per title, with the most recent title on the left. New cards slide in from the left and existing cards animate to their new positions; Reduce Motion disables movement.
+
+Sync runs on launch/foreground, before resuming playback, after pausing/closing playback, and every 20 seconds while the app is active. Saves during playback are batched for five seconds. Background uploads receive bounded execution time; local data remains durable if iOS suspends the app or the network is unavailable. Reopening the app or **Sync now** retries. This is eventual sync, not a guarantee of instantaneous delivery while either device is offline or suspended.
+
+Clearing watch history records a durable clear marker so an offline device does not bring old history back. The custom-server API assigns clear times when it receives the deletion; playback retained from after an offline local clear is rebased after that server time. Up to 500 movie/episode records are exchanged per sync. Saved bookmarks, downloads and app preferences are currently device-local; sync covers the watched library.
+
+### Building with Apple Cloud
+
+The shared defaults build without iCloud entitlements, so a free Personal Team can still sign and install the app. To include Apple Cloud, use a paid Apple development team and add to your ignored `Config/Local.xcconfig`:
+
+```xcconfig
+REZKA_ICLOUD_ENTITLEMENTS = Config/CloudSync.entitlements
+REZKA_CLOUDKIT_CONDITION = REZKA_CLOUDKIT
+// Optional override; defaults to iCloud.<your app bundle identifier>
+REZKA_ICLOUD_CONTAINER = iCloud.$(REZKA_BUNDLE_IDENTIFIER)
+```
+
+Enable iCloud/CloudKit for your app identifier and associate that container in Apple Developer/Xcode signing. Both devices must use the same container and CloudKit environment. Debug uses Development; Release uses Production. Run `xcodegen generate` after editing `project.yml` (local signing changes alone do not require it).
+
+The app uses the private database, custom zone `WatchLibrary`, record type `WatchProgress` with a Bytes field `payload`, and `WatchLibraryState` with a Date field `clearedAt`. Development schema is created when the first records are saved. Before distributing a Release build, deploy these record types/fields to Production in CloudKit Console. No query indexes are needed. Each movie/episode uses a separate record and conditional saves retry conflicts. Cloud records older than the retained local history are ignored rather than deleted, to avoid deleting concurrent updates. An iCloud account change turns sync off until you select Apple Cloud again.
+
+A user of an already signed iCloud-enabled build does not need their own paid developer membership. Someone re-signing with a free Personal Team must build without the two optional iCloud settings and choose the custom-server option.
+
+### Device acceptance
+
+Use two physical devices signed into the same iCloud account and select Apple Cloud on both. On iPad start a previously unwatched series, pause partway through an episode, then open iPhone: its card should arrive in Continue Watching with the same season/episode and resume position. Watch another title on either device and confirm it moves to the left on the other device, including while Home stays open. Check intentional rewind, completion, offline playback/reconnect, and a clear while the other device is offline. Repeat with Reduce Motion enabled. Simulator fixture tests cover insertion/reordering and the Settings picker; they do not verify Apple’s account service or real cloud delivery.
 
 ## How it works
 

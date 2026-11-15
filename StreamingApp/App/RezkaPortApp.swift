@@ -64,12 +64,44 @@ struct MainTabsView: View {
             }
             #endif
         }
-        .task { await model.syncHistoryOnLaunch() }
-        .onChange(of: scenePhase) { _, phase in
-            Task {
-                if phase == .active { await model.refreshCloudHistory() }
-                else { await model.syncHistoryBeforeLeaving() }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            // Also detects changes while Home remains open on another device.
+            while !Task.isCancelled {
+                await model.refreshCloudHistory()
+                do { try await Task.sleep(for: .seconds(20)) } catch { return }
             }
         }
+        .onChange(of: scenePhase) { _, phase in
+            Task {
+                guard phase == .background else { return }
+                let background = WatchHistoryBackgroundTask {
+                    model.watchSync.cancelCurrentSync()
+                }
+                defer { background.finish() }
+                await model.syncHistoryBeforeLeaving()
+            }
+        }
+    }
+}
+
+/// Give the final playback save bounded time to upload when the app backgrounds.
+@MainActor
+private final class WatchHistoryBackgroundTask {
+    private var identifier: UIBackgroundTaskIdentifier = .invalid
+
+    init(onExpiration: @escaping @MainActor () -> Void) {
+        identifier = UIApplication.shared.beginBackgroundTask(withName: "Save viewing history") { [weak self] in
+            Task { @MainActor in
+                onExpiration()
+                self?.finish()
+            }
+        }
+    }
+
+    func finish() {
+        guard identifier != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
+        identifier = .invalid
     }
 }

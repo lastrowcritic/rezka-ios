@@ -12,6 +12,7 @@ struct PlayerView: View {
     @State private var pendingSeek: TimeInterval?
     @State private var isRestoringPosition = false
     @State private var hasStarted = false
+    @State private var lastSavedPosition: TimeInterval?
     @State private var progressTask: Task<Void, Never>?
     @State private var readyTask: Task<Void, Never>?
     @State private var autoplayTask: Task<Void, Never>?
@@ -44,7 +45,10 @@ struct PlayerView: View {
             .statusBarHidden()
             .onChange(of: scenePhase) { if scenePhase != .active { saveProgress() } }
             .onReceive(player.publisher(for: \.timeControlStatus)) { status in
-                if status == .paused { saveProgress() }
+                if status == .paused {
+                    saveProgress()
+                    Task { await model.syncHistoryNow() }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { notification in
                 guard notification.object as? AVPlayerItem === player.currentItem else { return }
@@ -91,6 +95,7 @@ struct PlayerView: View {
             selectedQuality = stream.quality
             alternativeIndex = 0
             pendingSeek = 0
+            lastSavedPosition = 0
             isRestoringPosition = true
             player.pause()
             player.replaceCurrentItem(with: Self.playerItem(url: stream.url, headers: result.headers, title: item.title, request: selection))
@@ -118,6 +123,7 @@ struct PlayerView: View {
         } else { record = model.history.first(where: { $0.item.id == item.id }) }
         pendingSeek = record.flatMap { $0.progress < 1.0 ? $0.resumePosition(for: request) : nil }
         isRestoringPosition = pendingSeek != nil
+        lastSavedPosition = pendingSeek ?? 0
         model.recordStart(item)
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
@@ -170,13 +176,20 @@ struct PlayerView: View {
         if ProcessInfo.processInfo.arguments.contains("--rezka-ui-fixtures") { return }
         #endif
         guard hasStarted, !isRestoringPosition, !isFinished else { return }
-        model.recordProgress(for: item, position: player.currentTime().seconds,
+        let position = player.currentTime().seconds
+        guard position.isFinite, position >= 0,
+              lastSavedPosition.map({ abs($0 - position) > 0.01 }) ?? true else { return }
+        // A paused player must not keep making its stale position newer than
+        // playback on another device. A deliberate seek still counts as a change.
+        lastSavedPosition = position
+        model.recordProgress(for: item, position: position,
                              duration: player.currentItem?.duration.seconds ?? 0, request: request)
     }
 
     private func saveAndStop() {
         saveProgress()
         stopPlayback()
+        Task { await model.syncHistoryNow() }
     }
 
     private func stopPlayback() {

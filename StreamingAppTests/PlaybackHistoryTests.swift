@@ -65,6 +65,50 @@ final class PlaybackHistoryTests: XCTestCase {
         await controller.dismiss(animated: false)
     }
 
+    func testPausedPlayerDoesNotOverwriteProgressReceivedFromAnotherDevice() async throws {
+        let suite = "RezkaPausedSyncTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(defaults: defaults)
+        let url = try XCTUnwrap(Bundle.main.url(forResource: "NativePlayerFixture", withExtension: "mp4"))
+        let item = MediaItem(id: "paused-sync", title: "Paused sync", kind: .movie,
+                             genre: "Drama", synopsis: "", symbol: "film", paletteIndex: 0, streamURL: url)
+        let player = AVPlayer()
+        let started = expectation(description: "Playback starts")
+        var didStart = false
+        let observation = player.publisher(for: \.rate).sink { rate in
+            guard rate > 0, !didStart else { return }
+            didStart = true
+            started.fulfill()
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previousWindow = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        let view = PlayerView(item: item, source: PlaybackSource(streams: [VideoStream(quality: "Original", url: url)], subtitles: []),
+                              preferredQuality: "Original", makePlayer: { item in
+            player.replaceCurrentItem(with: item)
+            return player
+        })
+        window.rootViewController = UIHostingController(rootView: view.environment(model))
+        window.makeKeyAndVisible()
+        defer {
+            observation.cancel()
+            player.pause()
+            window.isHidden = true
+            window.rootViewController = nil
+            previousWindow?.makeKey()
+        }
+        await fulfillment(of: [started], timeout: 10)
+        player.pause()
+        try await Task.sleep(for: .milliseconds(300))
+        let remote = WatchRecord(item: item, position: 20, duration: 30, updatedAt: .now)
+        model.installSyncedHistory(WatchHistorySnapshot(records: [remote]))
+        // Cross the player's periodic save interval while its local position is stale.
+        try await Task.sleep(for: .seconds(6))
+        XCTAssertEqual(model.history.first?.position, 20)
+        XCTAssertEqual(model.history.first?.updatedAt, remote.updatedAt)
+    }
+
     func testNativePlayerReceivesReadyStatusAndSeeksWhileConsumerIsSuspended() async throws {
         let url = try XCTUnwrap(Bundle.main.url(forResource: "NativePlayerFixture", withExtension: "mp4"))
         let item = AVPlayerItem(url: url)

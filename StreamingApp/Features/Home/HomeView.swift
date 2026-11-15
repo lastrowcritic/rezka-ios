@@ -37,6 +37,7 @@ struct HomeView: View {
 
                 if !model.continueWatching.isEmpty {
                     continueSection
+                        .transition(reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
                 }
 
                 kindPicker
@@ -153,6 +154,7 @@ struct HomeView: View {
                     }
                 }
             }
+            .animation(reduceMotion ? nil : .spring(response: 0.48, dampingFraction: 0.85), value: model.continueWatching.map(\.id))
             .padding(.horizontal, 20)
             .padding(.top, 12)
             .padding(.bottom, 28)
@@ -168,7 +170,7 @@ struct HomeView: View {
         }
         .task(id: selectedKind) { await loadCategory() }
         .task(id: model.excludedCountryCodes) { _ = await model.countryChecked(categoryItems) }
-        .refreshable { await model.loadHome(); await model.loadDiscovery(force: true) }
+        .refreshable { await model.refreshCloudHistory(); await model.loadHome(); await model.loadDiscovery(force: true) }
         }
     }
 
@@ -251,6 +253,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 14) {
             sectionHeading("Continue watching") { HistoryView() }
 
+            ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 14) {
                     ForEach(model.continueWatching) { record in
@@ -280,14 +283,26 @@ struct HomeView: View {
                             .padding(10)
                             .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         }
+                        .transition(reduceMotion ? .opacity : .asymmetric(
+                            insertion: .move(edge: .leading).combined(with: .opacity), removal: .opacity))
                         .accessibilityIdentifier("continue-title-\(record.item.id)")
                         .posterPressFeedback()
                     }
                 }
+                .animation(reduceMotion ? nil : .spring(response: 0.48, dampingFraction: 0.85), value: model.continueWatching.map(\.id))
                 .padding(.horizontal, 20)
+                .id("continue-watching-row")
             }
+            .defaultScrollAnchor(.leading)
             .padding(.horizontal, -20)
             .scrollClipDisabled()
+            .onChange(of: model.continueWatching.map(\.id)) { _, ids in
+                guard !ids.isEmpty else { return }
+                withAnimation(reduceMotion ? nil : .spring(response: 0.48, dampingFraction: 0.85)) {
+                    proxy.scrollTo("continue-watching-row", anchor: .leading)
+                }
+            }
+            }
         }
     }
 
