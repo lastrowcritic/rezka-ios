@@ -160,6 +160,7 @@ struct ArtworkView: View {
             .clipped()
         }
         .accessibilityHidden(true)
+        .allowsHitTesting(false)
         .task(id: item.id) {
             if !useOriginal { await model.preparePreviewArtwork(for: item) }
         }

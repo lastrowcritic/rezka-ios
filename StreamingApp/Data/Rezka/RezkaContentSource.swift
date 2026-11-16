@@ -44,13 +44,12 @@ actor RezkaContentSource: ContentSource {
         let cleaned = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return RezkaCataloguePage(items: [], hasNextPage: false) }
         let base = try await mirrors.activeURL()
-        var components = URLComponents(url: base.appendingPathComponent(RezkaEndpoints.search), resolvingAgainstBaseURL: true)!
+        var components = URLComponents(url: try RezkaEndpoints.url(path: RezkaEndpoints.search, baseURL: base), resolvingAgainstBaseURL: true)!
         components.queryItems = [URLQueryItem(name: "do", value: "search"), URLQueryItem(name: "subaction", value: "search"),
                                  URLQueryItem(name: "q", value: cleaned), URLQueryItem(name: "page", value: String(max(page, 1)))]
         guard let url = components.url else { throw RezkaError.invalidURL }
         let (html, resolvedURL) = try await fetchPage(url)
-        let result = try parser.catalogue(html: html, baseURL: resolvedURL, page: page)
-        guard html.contains("b-content") || !result.items.isEmpty else { throw RezkaError.invalidPage("The search page could not be read.") }
+        let result = try parser.search(html: html, baseURL: resolvedURL, page: page)
         remember(result.items)
         return result
     }
@@ -119,7 +118,7 @@ actor RezkaContentSource: ContentSource {
     func collections(page: Int = 1) async throws -> [RezkaCollection] {
         let base = try await mirrors.activeURL()
         let path = page > 1 ? "\(RezkaEndpoints.collections)page/\(page)/" : RezkaEndpoints.collections
-        let (html, url) = try await fetchPage(base.appendingPathComponent(path))
+        let (html, url) = try await fetchPage(RezkaEndpoints.url(path: path, baseURL: base))
         return try parser.collections(html: html, baseURL: url)
     }
 

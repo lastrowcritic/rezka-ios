@@ -1,0 +1,7 @@
+REZKA_BUNDLE_IDENTIFIER = com.personal.rezkaport
+DEVELOPMENT_TEAM =
+// Server-only builds need no paid Apple capabilities.
+REZKA_ICLOUD_ENTITLEMENTS =
+REZKA_CLOUDKIT_CONDITION =
+REZKA_ICLOUD_CONTAINER = iCloud.$(REZKA_BUNDLE_IDENTIFIER)
+#include? "Local.xcconfig"

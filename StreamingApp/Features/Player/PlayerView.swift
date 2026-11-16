@@ -1,4 +1,5 @@
 import AVKit
+import Combine
 import SwiftUI
 
 struct PlayerView: View {
@@ -11,6 +12,7 @@ struct PlayerView: View {
     @State private var pendingSeek: TimeInterval?
     @State private var isRestoringPosition = false
     @State private var hasStarted = false
+    @State private var lastSavedPosition: TimeInterval?
     @State private var progressTask: Task<Void, Never>?
     @State private var readyTask: Task<Void, Never>?
     @State private var autoplayTask: Task<Void, Never>?
@@ -23,7 +25,7 @@ struct PlayerView: View {
     let seasons: [RezkaSeason]
     let onFailure: @MainActor (String) -> Void
 
-    init(item: MediaItem, source: PlaybackSource, preferredQuality: String, request: PlaybackRequest? = nil, seasons: [RezkaSeason] = [], onFailure: @escaping @MainActor (String) -> Void = { _ in }) {
+    init(item: MediaItem, source: PlaybackSource, preferredQuality: String, request: PlaybackRequest? = nil, seasons: [RezkaSeason] = [], makePlayer: (AVPlayerItem) -> AVPlayer = { AVPlayer(playerItem: $0) }, onFailure: @escaping @MainActor (String) -> Void = { _ in }) {
         self.item = item
         self.seasons = seasons
         self.onFailure = onFailure
@@ -31,7 +33,7 @@ struct PlayerView: View {
         _request = State(initialValue: request)
         let stream = source.streams.first(where: { $0.quality == preferredQuality }) ?? source.streams[0]
         _selectedQuality = State(initialValue: stream.quality)
-        _player = State(initialValue: AVPlayer(playerItem: Self.playerItem(url: stream.url, headers: source.headers, title: item.title, request: request)))
+        _player = State(initialValue: makePlayer(Self.playerItem(url: stream.url, headers: source.headers, title: item.title, request: request)))
     }
 
     var body: some View {
@@ -43,7 +45,10 @@ struct PlayerView: View {
             .statusBarHidden()
             .onChange(of: scenePhase) { if scenePhase != .active { saveProgress() } }
             .onReceive(player.publisher(for: \.timeControlStatus)) { status in
-                if status == .paused { saveProgress() }
+                if status == .paused {
+                    saveProgress()
+                    Task { await model.syncHistoryNow() }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { notification in
                 guard notification.object as? AVPlayerItem === player.currentItem else { return }
@@ -90,17 +95,12 @@ struct PlayerView: View {
             selectedQuality = stream.quality
             alternativeIndex = 0
             pendingSeek = 0
+            lastSavedPosition = 0
             isRestoringPosition = true
+            player.pause()
             player.replaceCurrentItem(with: Self.playerItem(url: stream.url, headers: result.headers, title: item.title, request: selection))
             model.recordProgress(for: item, position: 0, duration: 0, request: selection)
-            #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--rezka-ui-fixtures") {
-                player.play()
-                return
-            }
-            #endif
             observeCurrentItem()
-            player.playImmediately(atRate: player.defaultRate)
         } catch is CancellationError { }
         catch { failPlayback(error.localizedDescription) }
     }
@@ -109,11 +109,11 @@ struct PlayerView: View {
         guard !hasStarted else { return }
         hasStarted = true
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--rezka-ui-fixtures") {
+        if ProcessInfo.processInfo.arguments.contains("--rezka-ui-fixtures"),
+           ProcessInfo.processInfo.arguments.contains("--rezka-ui-finished-episode") {
             try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
             try? AVAudioSession.sharedInstance().setActive(true)
-            if ProcessInfo.processInfo.arguments.contains("--rezka-ui-finished-episode") { finishEpisode() }
-            else { player.play() }
+            finishEpisode()
             return
         }
         #endif
@@ -123,6 +123,7 @@ struct PlayerView: View {
         } else { record = model.history.first(where: { $0.item.id == item.id }) }
         pendingSeek = record.flatMap { $0.progress < 1.0 ? $0.resumePosition(for: request) : nil }
         isRestoringPosition = pendingSeek != nil
+        lastSavedPosition = pendingSeek ?? 0
         model.recordStart(item)
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
@@ -136,20 +137,26 @@ struct PlayerView: View {
                 saveProgress()
             }
         }
-        player.play()
+        // AVPlayerItem loads while paused. Do not play the opening frames/audio
+        // while readiness and the saved-position seek are still pending.
+        if pendingSeek == nil { player.play() }
     }
 
     private func observeCurrentItem() {
         readyTask?.cancel()
         guard let currentItem = player.currentItem else { return }
         readyTask = Task { @MainActor in
-            for await status in currentItem.publisher(for: \.status).values {
+            for await status in Self.itemStatusUpdates(for: currentItem).values {
                 if Task.isCancelled { return }
                 if status == .failed { useAlternative(); return }
                 if status == .readyToPlay, let position = pendingSeek {
-                    pendingSeek = nil
-                    await player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: CMTime(seconds: 3, preferredTimescale: 600), toleranceAfter: .zero)
+                    let restored = await player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
                     guard !Task.isCancelled else { return }
+                    guard restored else {
+                        failPlayback("Your saved position could not be restored. Please try again.")
+                        return
+                    }
+                    pendingSeek = nil
                     isRestoringPosition = false
                     player.playImmediately(atRate: player.defaultRate)
                 }
@@ -157,18 +164,32 @@ struct PlayerView: View {
         }
     }
 
+    static func itemStatusUpdates(for item: AVPlayerItem) -> some Publisher<AVPlayerItem.Status, Never> {
+        // AsyncPublisher requests one value at a time. KVO can emit readyToPlay
+        // between requests (or while a seek is awaited), so retain the latest status.
+        item.publisher(for: \.status)
+            .buffer(size: 1, prefetch: .byRequest, whenFull: .dropOldest)
+    }
+
     private func saveProgress() {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--rezka-ui-fixtures") { return }
         #endif
         guard hasStarted, !isRestoringPosition, !isFinished else { return }
-        model.recordProgress(for: item, position: player.currentTime().seconds,
+        let position = player.currentTime().seconds
+        guard position.isFinite, position >= 0,
+              lastSavedPosition.map({ abs($0 - position) > 0.01 }) ?? true else { return }
+        // A paused player must not keep making its stale position newer than
+        // playback on another device. A deliberate seek still counts as a change.
+        lastSavedPosition = position
+        model.recordProgress(for: item, position: position,
                              duration: player.currentItem?.duration.seconds ?? 0, request: request)
     }
 
     private func saveAndStop() {
         saveProgress()
         stopPlayback()
+        Task { await model.syncHistoryNow() }
     }
 
     private func stopPlayback() {
@@ -182,10 +203,11 @@ struct PlayerView: View {
 
     private func replaceURL(_ url: URL) {
         let position = player.currentTime().seconds
-        if position.isFinite, position > 0 { pendingSeek = position; isRestoringPosition = true }
+        if pendingSeek == nil, position.isFinite, position > 0 { pendingSeek = position; isRestoringPosition = true }
+        player.pause()
         player.replaceCurrentItem(with: Self.playerItem(url: url, headers: source.headers, title: item.title, request: request))
         observeCurrentItem()
-        player.playImmediately(atRate: player.defaultRate)
+        if pendingSeek == nil { player.play() }
     }
 
     private func useAlternative() {

@@ -1,0 +1,8 @@
+REZKA_BUNDLE_IDENTIFIER = com.example.rezkaport
+DEVELOPMENT_TEAM =
+
+// Optional: paid development team + iCloud container registered for this app.
+// Uncomment both to build Apple Cloud support; leave commented for a free Personal Team.
+// REZKA_ICLOUD_ENTITLEMENTS = Config/CloudSync.entitlements
+// REZKA_CLOUDKIT_CONDITION = REZKA_CLOUDKIT
+// REZKA_ICLOUD_CONTAINER = iCloud.$(REZKA_BUNDLE_IDENTIFIER)

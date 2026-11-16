@@ -7,7 +7,8 @@ final class AppModel {
     let contentSource: RezkaContentSource
     let browser: RezkaBrowserSession
     private let defaults: UserDefaults
-    let watchSync = WatchSyncManager()
+    let watchSync: WatchSyncManager
+    private(set) var historyClearedAt: Date
 
     private(set) var catalogueItems: [MediaItem] = []
     private(set) var isLoadingHome = false
@@ -46,7 +47,7 @@ final class AppModel {
     private(set) var downloadProgress: [String: Double] = [:]
     private(set) var downloadTitles: [String: String] = [:]
 
-    init(defaults injectedDefaults: UserDefaults = .standard) {
+    init(defaults injectedDefaults: UserDefaults = .standard, watchSync injectedSync: WatchSyncManager? = nil) {
         let defaults: UserDefaults
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--rezka-ui-fixtures") {
@@ -57,6 +58,16 @@ final class AppModel {
         defaults = injectedDefaults
         #endif
         self.defaults = defaults
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--rezka-ui-fixtures"),
+           ProcessInfo.processInfo.arguments.contains("--rezka-ui-sync") {
+            defaults.set(WatchSyncMode.appleCloud.rawValue, forKey: "watchSyncMode")
+            watchSync = WatchSyncManager(defaults: defaults, appleBackend: RezkaUITestWatchSyncBackend())
+        } else { watchSync = injectedSync ?? WatchSyncManager(defaults: defaults) }
+        #else
+        watchSync = injectedSync ?? WatchSyncManager(defaults: defaults)
+        #endif
+        historyClearedAt = Date(timeIntervalSince1970: defaults.double(forKey: "watchHistoryClearedAt"))
         let browser = RezkaBrowserSession()
         self.browser = browser
         let transport: any RezkaTransport
@@ -80,9 +91,19 @@ final class AppModel {
         excludedCountryCodes = Set(defaults.stringArray(forKey: "excludedCountryCodes") ?? [])
         originalArtworkURLs = Self.decode([String: URL].self, key: "originalArtworkURLs", defaults: defaults) ?? [:]
         previewArtworkURLs = Self.decode([String: URL].self, key: "previewArtworkURLs", defaults: defaults) ?? [:]
+        watchSync.connect(read: { [weak self] in self?.watchHistorySnapshot ?? WatchHistorySnapshot() },
+                          install: { [weak self] in self?.installSyncedHistory($0) })
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--rezka-ui-fixtures") {
             autoPlayNext = ProcessInfo.processInfo.arguments.contains("--rezka-ui-autoplay")
+            if ProcessInfo.processInfo.arguments.contains("--rezka-ui-resume") {
+                let series = ProcessInfo.processInfo.arguments.contains("--rezka-ui-series")
+                let item = MediaItem(id: "42", title: "Screen test title", kind: series ? .series : .movie,
+                    genre: "Drama", synopsis: "", symbol: "film", paletteIndex: 0,
+                    rezka: RezkaMedia(movieID: "42", pageURL: URL(string: "https://rezka.test/\(series ? "series" : "films")/42-screen-test.html")!, isSeries: series))
+                recordProgress(for: item, position: 12.5, duration: 30,
+                    request: PlaybackRequest(mediaID: "42", translatorID: "7", season: series ? "2" : nil, episode: series ? "1" : nil))
+            }
         }
         #endif
     }
@@ -124,7 +145,7 @@ final class AppModel {
 
     var continueWatching: [WatchRecord] {
         history.filter { ($0.position > 0 || $0.episodeID != nil) && $0.progress < 1.0 }
-            .sorted { $0.updatedAt > $1.updatedAt }
+            .sorted(by: WatchHistorySnapshot.mostRecentFirst)
     }
 
     func item(id: String) -> MediaItem? {
@@ -271,21 +292,19 @@ final class AppModel {
 
     func recordProgress(for item: MediaItem, position: TimeInterval, duration: TimeInterval, request: PlaybackRequest? = nil) {
         guard position.isFinite, position >= 0 else { return }
-        let previous = history.first(where: { $0.item.id == item.id && $0.seasonID == request?.season && $0.episodeID == request?.episode })
+        let previous = cloudHistoryRecords.first(where: { $0.item.id == item.id && $0.seasonID == request?.season && $0.episodeID == request?.episode })
         let knownDuration = duration.isFinite && duration > 0 ? duration : previous?.duration ?? 0
         let record = WatchRecord(item: item, position: position, duration: knownDuration, updatedAt: .now,
                                  translatorID: request?.translatorID, seasonID: request?.season, episodeID: request?.episode)
-        if let season = request?.season, let episode = request?.episode {
-            episodeHistory[episodeKey(item.id, season, episode)] = record
-            persist(episodeHistory, key: "episodeHistory")
+        if let season = record.seasonID, let episode = record.episodeID {
+            episodeHistory.removeValue(forKey: episodeKey(item.id, season, episode))
         }
+        episodeHistory[record.syncKey] = record
+        persist(episodeHistory, key: "episodeHistory")
         history.removeAll { $0.item.id == item.id }
         history.insert(record, at: 0)
-        if record.progress >= 1.0 {
-            history.removeAll { $0.item.id == item.id }
-        }
         persist(history, key: "watchHistory")
-        watchSync.schedule(records: cloudHistoryRecords)
+        watchSync.schedule()
     }
 
     func recordStart(_ item: MediaItem) {
@@ -295,11 +314,12 @@ final class AppModel {
         history.removeAll { $0.item.id == item.id }
         history.insert(record, at: 0)
         persist(history, key: "watchHistory")
-        watchSync.schedule(records: cloudHistoryRecords)
+        watchSync.schedule()
     }
 
     func episodeRecord(mediaID: String, season: String, episode: String) -> WatchRecord? {
         episodeHistory[episodeKey(mediaID, season, episode)]
+            ?? episodeHistory.values.first(where: { $0.item.id == mediaID && $0.seasonID == season && $0.episodeID == episode })
             ?? history.first(where: { $0.item.id == mediaID && $0.seasonID == season && $0.episodeID == episode })
     }
 
@@ -308,56 +328,36 @@ final class AppModel {
     }
 
     func clearHistory() {
+        historyClearedAt = .now
         history = []
         episodeHistory = [:]
         persist(history, key: "watchHistory")
         persist(episodeHistory, key: "episodeHistory")
-        watchSync.clearRemoteHistory()
+        defaults.set(historyClearedAt.timeIntervalSince1970, forKey: "watchHistoryClearedAt")
+        Task { await watchSync.syncNow() }
     }
 
-    var cloudHistoryRecords: [WatchRecord] {
-        var records = episodeHistory.values.reduce(into: [String: WatchRecord]()) { result, record in
-            result["\(record.item.id):\(record.seasonID ?? "movie"):\(record.episodeID ?? "movie")"] = record
-        }
-        for record in history {
-            let key = "\(record.item.id):\(record.seasonID ?? "movie"):\(record.episodeID ?? "movie")"
-            if records[key].map({ $0.updatedAt < record.updatedAt }) ?? true { records[key] = record }
-        }
-        return Array(records.values).sorted { $0.updatedAt > $1.updatedAt }.prefix(500).map { $0 }
+    var watchHistorySnapshot: WatchHistorySnapshot {
+        WatchHistorySnapshot(records: Array(episodeHistory.values) + history, clearedAt: historyClearedAt)
+            .merging(WatchHistorySnapshot())
     }
 
-    func installCloudHistory(_ records: [WatchRecord]) {
-        var episodes: [String: WatchRecord] = [:]
-        var latest: [String: WatchRecord] = [:]
-        for record in records {
-            if let season = record.seasonID, let episode = record.episodeID {
-                episodes[episodeKey(record.item.id, season, episode)] = record
-            }
-            if latest[record.item.id].map({ $0.updatedAt < record.updatedAt }) ?? true { latest[record.item.id] = record }
-        }
-        episodeHistory = episodes
-        history = Array(latest.values).sorted { $0.updatedAt > $1.updatedAt }
+    var cloudHistoryRecords: [WatchRecord] { watchHistorySnapshot.records }
+
+    func installSyncedHistory(_ snapshot: WatchHistorySnapshot) {
+        let normalized = snapshot.merging(WatchHistorySnapshot())
+        episodeHistory = Dictionary(uniqueKeysWithValues: normalized.records.map { ($0.syncKey, $0) })
+        history = normalized.latestByTitle
+        historyClearedAt = normalized.clearedAt
         persist(episodeHistory, key: "episodeHistory")
         persist(history, key: "watchHistory")
+        defaults.set(historyClearedAt.timeIntervalSince1970, forKey: "watchHistoryClearedAt")
     }
 
-    func syncHistoryOnLaunch() async {
-        let records = await watchSync.restore(local: cloudHistoryRecords)
-        installCloudHistory(records)
-    }
-
-    func refreshCloudHistory() async {
-        let records = await watchSync.refresh(local: cloudHistoryRecords)
-        installCloudHistory(records)
-    }
-
-    func syncHistoryBeforeLeaving() async {
-        await watchSync.syncNow(records: cloudHistoryRecords)
-    }
-
-    func syncHistoryNow() async {
-        await watchSync.syncNow(records: cloudHistoryRecords)
-    }
+    func syncHistoryOnLaunch() async { await watchSync.syncNow() }
+    func refreshCloudHistory() async { await watchSync.syncNow() }
+    func syncHistoryBeforeLeaving() async { await watchSync.syncNow() }
+    func syncHistoryNow() async { await watchSync.syncNow() }
 
     func downloadID(for item: MediaItem, request: PlaybackRequest? = nil) -> String {
         "offline:\(item.id):\(request?.season ?? "movie"):\(request?.episode ?? "movie")"

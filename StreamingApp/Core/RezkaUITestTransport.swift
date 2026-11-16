@@ -4,6 +4,21 @@ import Foundation
 struct RezkaUITestTransport: RezkaTransport {
     func send(_ request: URLRequest) async throws -> RezkaHTTPResponse {
         guard let url = request.url else { throw RezkaError.invalidURL }
+        if ProcessInfo.processInfo.arguments.contains("--rezka-ui-resume"), url.path.contains("42-screen-test") {
+            try await Task.sleep(for: .seconds(3))
+        }
+        if ProcessInfo.processInfo.arguments.contains("--rezka-ui-search"),
+           URLComponents(url: url, resolvingAgainstBaseURL: false)?.path == RezkaEndpoints.search {
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+                .first(where: { $0.name == "q" })?.value ?? ""
+            try await Task.sleep(for: .milliseconds(150))
+            let matches = ["screen test", "екран"].contains(query.lowercased())
+            let html = matches ? """
+            <div class="b-content__inline_item" data-id="42" data-url="/films/42-screen-test.html">
+            <div class="b-content__inline_item-link"><a href="/films/42-screen-test.html">Screen test title</a><div>2026, Italy, Drama</div></div></div>
+            """ : "<div class='b-content__search_wrapper'>No results</div>"
+            return RezkaHTTPResponse(data: Data(html.utf8), url: url, statusCode: 200)
+        }
         if ProcessInfo.processInfo.arguments.contains("--rezka-ui-polish"), !url.path.contains("get_cdn_series") {
             return RezkaHTTPResponse(data: Data(polishHTML(url: url).utf8), url: url, statusCode: 200)
         }
@@ -15,6 +30,9 @@ struct RezkaUITestTransport: RezkaTransport {
             var response: [String: Any] = ["success": true, "url": "[720p]https://video.test/stream?id=42",
                 "subtitle": "", "subtitle_lns": [:], "subtitle_def": "0"]
             if form.contains("get_episodes") {
+                if ProcessInfo.processInfo.arguments.contains("--rezka-ui-resume") {
+                    try await Task.sleep(for: .seconds(3))
+                }
                 response["seasons"] = "<li class='b-simple_season__item' data-tab_id='1'>Season 1</li><li class='b-simple_season__item' data-tab_id='2'>Season 2</li>"
                 response["episodes"] = "<div id='simple-episodes-list-1'><li class='b-simple_episode__item' data-episode_id='1'>First episode</li></div><div id='simple-episodes-list-2'><li class='b-simple_episode__item' data-episode_id='1'>Second episode</li></div>"
             }

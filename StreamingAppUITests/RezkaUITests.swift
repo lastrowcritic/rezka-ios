@@ -3,6 +3,135 @@ import AVKit
 
 @MainActor
 final class RezkaUITests: XCTestCase {
+    func testRemoteContinueWatchingAppearsAndReordersMostRecentFirst() async throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--rezka-ui-fixtures", "--rezka-ui-sync"]
+        app.launch()
+        let movie = app.buttons["continue-title-sync-movie"]
+        let series = app.buttons["continue-title-sync-series"]
+        XCTAssertTrue(movie.waitForExistence(timeout: 15))
+        for _ in 0..<3 where !movie.isHittable { app.swipeUp() }
+        XCTAssertTrue(series.waitForExistence(timeout: 30))
+        // Wait for the insertion animation to finish before checking geometry.
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertLessThan(series.frame.minX, movie.frame.minX)
+        capture(app, name: "Remote series inserted first")
+        let deadline = Date.now.addingTimeInterval(30)
+        while movie.frame.minX >= series.frame.minX, Date.now < deadline {
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        XCTAssertLessThan(movie.frame.minX, series.frame.minX)
+        capture(app, name: "Remote movie moved to first")
+    }
+
+    func testSettingsOffersOffAppleCloudAndCustomServer() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--rezka-ui-fixtures"]
+        app.launch()
+        // iPad places tabs in a horizontally scrolling bar. Reveal the last
+        // tab before tapping it; its clipped accessibility button can still exist.
+        let nextTabPage = app.buttons["Next Page"]
+        if nextTabPage.exists { nextTabPage.tap() }
+        app.buttons["Settings"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5), app.debugDescription)
+        let picker = app.buttons["sync-provider"]
+        for _ in 0..<6 where !picker.isHittable { app.swipeUp() }
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        picker.tap()
+        XCTAssertTrue(app.buttons["Apple Cloud (iCloud)"].waitForExistence(timeout: 5))
+        app.buttons["Custom server URL"].tap()
+        let serverAddress = app.textFields["Sync server address"]
+        for _ in 0..<3 where !serverAddress.isHittable { app.swipeUp() }
+        XCTAssertTrue(serverAddress.waitForExistence(timeout: 5))
+        picker.tap()
+        app.buttons["Off"].tap()
+        XCTAssertFalse(app.textFields["Sync server address"].exists)
+    }
+
+    func testContinueWatchingShowsResumeBeforeMovieAndEpisodeDetailsLoad() throws {
+        for series in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--rezka-ui-fixtures", "--rezka-ui-resume"] + (series ? ["--rezka-ui-series"] : [])
+            app.launch()
+            let saved = app.buttons["continue-title-42"]
+            XCTAssertTrue(saved.waitForExistence(timeout: 15))
+            for _ in 0..<4 where !saved.isHittable { app.swipeUp() }
+            saved.tap()
+            let play = app.buttons["play-title"]
+            XCTAssertTrue(play.waitForExistence(timeout: 5))
+            let label = series ? "Resume S2 E1" : "Resume from 0:12"
+            XCTAssertEqual(play.label, label)
+            XCTAssertFalse(play.isEnabled, "Check the initial label before network-backed selections load")
+            expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: play)
+            waitForExpectations(timeout: 20)
+            XCTAssertEqual(play.label, label)
+            if !play.isHittable { app.swipeUp() }
+            play.tap()
+            XCTAssertTrue(app.otherElements["native-player"].waitForExistence(timeout: 10))
+            expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.otherElements["playback-loading"])
+            waitForExpectations(timeout: 10)
+            capture(app, name: series ? "Resume saved episode" : "Resume saved movie")
+            app.terminate()
+        }
+    }
+
+    func testLiveSearchReturnsTitlesOnDevice() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Live search is checked on a connected device")
+        #else
+        let app = XCUIApplication()
+        app.launch()
+        XCTAssertTrue(app.buttons["Search titles"].waitForExistence(timeout: 45))
+        app.buttons["Search titles"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let field = app.textFields["Search Rezka titles"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        for query in ["не родись красивой", "Dune"] {
+            if app.buttons["Clear search"].exists { app.buttons["Clear search"].tap() }
+            field.tap()
+            field.typeText(query)
+            XCTAssertTrue(app.staticTexts["Results"].waitForExistence(timeout: 40), "Expected results for \(query). \(app.debugDescription)")
+            capture(app, name: "Live search \(query)")
+        }
+        #endif
+    }
+
+    func testHomeSearchButtonOpensSearchInsteadOfFeaturedTitle() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--rezka-ui-fixtures"]
+        app.launch()
+        XCTAssertTrue(app.buttons["featured-title"].waitForExistence(timeout: 20))
+        let search = app.buttons["Search titles"]
+        XCTAssertTrue(search.isHittable)
+        search.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.textFields["Search Rezka titles"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["play-title"].exists)
+    }
+
+    func testSearchAcceptsQueryAndUpdatesResults() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--rezka-ui-fixtures", "--rezka-ui-search"]
+        app.launch()
+        XCTAssertTrue(app.buttons["featured-title"].waitForExistence(timeout: 20))
+        app.buttons["Search"].firstMatch.tap()
+        let field = app.textFields["Search Rezka titles"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        field.typeText("Screen test")
+        XCTAssertTrue(app.staticTexts["Results"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["1 titles"].exists)
+        XCTAssertFalse(app.buttons["play-title"].exists)
+        app.buttons["Clear search"].tap()
+        XCTAssertTrue(app.staticTexts["Popular right now"].waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("No matching title")
+        XCTAssertTrue(app.staticTexts["No results yet"].waitForExistence(timeout: 10))
+        app.buttons["Clear search"].tap()
+        field.tap()
+        field.typeText("Екран")
+        XCTAssertTrue(app.staticTexts["Results"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["catalogue-title-42"].exists)
+    }
+
     func testCategoryTilesScheduleAndMatchingPlaybackActions() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--rezka-ui-fixtures", "--rezka-ui-polish"]

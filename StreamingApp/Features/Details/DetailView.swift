@@ -382,9 +382,9 @@ struct DetailView: View {
 
     private var playLabel: String {
         if isResolvingPlayback { return "Loading video" }
-        let request = currentItem.rezka == nil ? nil : PlaybackRequest(mediaID: currentItem.id,
-            translatorID: translatorID.nonEmpty, season: seasonID.nonEmpty, episode: episodeID.nonEmpty)
-        if let position = model.history.first(where: { $0.item.id == item.id })?.resumePosition(for: request) {
+        let request = selectedRequest
+        if let record = selectedWatchRecord, record.progress < 1,
+           let position = record.resumePosition(for: request) {
             if let season = request?.season, let episode = request?.episode { return "Resume S\(season) E\(episode)" }
             let seconds = Int(position)
             return String(format: "Resume from %d:%02d", seconds / 60, seconds % 60)
@@ -399,8 +399,12 @@ struct DetailView: View {
 
     private var selectedRequest: PlaybackRequest? {
         guard currentItem.rezka != nil else { return nil }
+        // Local history is available before details and episode lists arrive.
+        // Once the list is loaded, the explicit selection is authoritative.
+        let saved = seasons.isEmpty ? model.history.first(where: { $0.item.id == item.id }) : nil
         return PlaybackRequest(mediaID: currentItem.id, translatorID: translatorID.nonEmpty,
-            season: seasonID.nonEmpty, episode: episodeID.nonEmpty, pageURL: currentItem.rezka?.pageURL)
+            season: seasonID.nonEmpty ?? saved?.seasonID,
+            episode: episodeID.nonEmpty ?? saved?.episodeID, pageURL: currentItem.rezka?.pageURL)
     }
 
     private var canDownload: Bool {
